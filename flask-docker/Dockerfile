@@ -7,6 +7,8 @@
  
 # 3) (Opcional) Paquetes del sistema si alguna dependencia lo requiere
  # RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 # 4) Directorio de trabajo dentro del contenedor
  WORKDIR /app
  
