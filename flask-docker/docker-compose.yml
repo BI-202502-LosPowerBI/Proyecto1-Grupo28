@@ -1,7 +1,7 @@
 services:
   api:
     build: .
-    image: image: hello-api:0.1.0 
+    image: hello-api:0.1.0
     environment:
       ENV: prod
     ports:
@@ -9,5 +9,5 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/ping"]
       interval: 30s
-      timeout: 5s	
+      timeout: 5s
       retries: 3
