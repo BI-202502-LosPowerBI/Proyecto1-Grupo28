@@ -1,9 +1,10 @@
 from flask import Flask, request, jsonify
 import pandas as pd
 import os, joblib, numpy as np
+from models.preprocessing import limpieza_df
 from sklearn.linear_model import LogisticRegression
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, classification_report
 
 app = Flask(__name__)
 
@@ -42,7 +43,7 @@ def predict():
     for it in data["instancias"]:
         if "textos" not in it:
             return jsonify(error="Formato inválido. Cada instancia requiere 'textos'"), 400
-        
+
     textos = [it["textos"] for it in data["instancias"]]
     preds = model.predict(textos).tolist()
     probs = None
@@ -76,7 +77,14 @@ def retrain():
     df_historico = pd.read_excel(HISTORICAL_DATA_PATH, engine="openpyxl")
     df_nuevo = pd.DataFrame(data["instancias"])
     df = pd.concat([df_historico, df_nuevo], ignore_index=True)
+    df = limpieza_df(df)
 
+    if df.shape[0] == 0:
+        return jsonify(error="No hay datos para reentrenar el modelo tras la limpieza"), 400
+    
+    if df["labels"].nunique() < 2:
+        return jsonify(error="Se requieren al menos dos clases para reentrenar el modelo"), 400
+    
     try:
         tfidf: TfidfVectorizer = model.named_steps["tfidf"]
         clf: LogisticRegression = model.named_steps["clf"]
@@ -105,6 +113,7 @@ def retrain():
         )
 
         cm = confusion_matrix(y, y_pred).tolist()
+        report = classification_report(y, y_pred, digits=4, output_dict=True)
 
     except Exception as e:
         return jsonify(error=f"Error reentrenando modelo: {e}"), 500
@@ -115,9 +124,60 @@ def retrain():
             "precision": round(precision_macro, 4),
             "recall": round(recall_macro, 4),
             "f1": round(f1_macro, 4),
-            "matriz_confusion": cm
+            "matriz_confusion": cm,
+            "reporte_clasificacion": report
         }
     ), 200
+
+@app.get("/metrics")
+def metrics():
+    if model is None:
+        return jsonify(error="Modelo no cargado"), 500
+    
+    df = pd.read_excel(VALIDATION_DATA_PATH, engine="openpyxl")
+    df = limpieza_df(df)
+
+    if df.shape[0] == 0:
+        return jsonify(error="No hay datos para calcular métricas tras la limpieza"), 400
+    
+    if df["labels"].nunique() < 2:
+        return jsonify(error="Se requieren al menos dos clases para calcular métricas"), 400
+    
+    try:
+        X = df["textos"].tolist()
+        y = df["labels"].tolist()
+        y_pred = model.predict(X)
+
+        precision_macro, recall_macro, f1_macro = (
+            precision_score(y, y_pred, average="macro", zero_division=0),
+            recall_score(y, y_pred, average="macro", zero_division=0),
+            f1_score(y, y_pred, average="macro", zero_division=0),
+        )
+
+        cm = confusion_matrix(y, y_pred).tolist()
+        report = classification_report(y, y_pred, digits=4, output_dict=True)
+    except Exception as e:
+        return jsonify(error=f"Error calculando métricas: {e}"), 500
+    
+    return jsonify(
+        metricas={
+            "precision": round(precision_macro, 4),
+            "recall": round(recall_macro, 4),
+            "f1": round(f1_macro, 4),
+            "matriz_confusion": cm,
+            "reporte_clasificacion": report
+        }
+    ), 200
+
+@app.get("/historical_data")
+def historical_data():
+    try:
+        df = pd.read_excel(HISTORICAL_DATA_PATH, engine="openpyxl")
+        data = df.to_dict(orient="records")
+    except Exception as e:
+        return jsonify(error=f"Error cargando datos históricos: {e}"), 500
+    
+    return jsonify(instancias=data), 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
