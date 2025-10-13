@@ -5,7 +5,6 @@ from io import StringIO
 import math
 import time
 
-# --- Config ---
 BACKEND_URL = "http://localhost:8000/predict"
 MAX_ROWS_PREVIEW = 100
 BATCH_SIZE = 200  
@@ -15,7 +14,6 @@ st.title("Clasificador ODS – Front (texto o CSV)")
 
 tab1, tab2 = st.tabs(["Texto manual", " Subir CSV"])
 
-# ------------------- UTIL -------------------
 def call_predict(texts):
     payload = {"instancias": [{"texto": t} for t in texts]}
     r = requests.post(BACKEND_URL, json=payload, timeout=60)
@@ -41,7 +39,7 @@ def batch_predict(texts, batch_size=BATCH_SIZE):
         p = data.get("probabilidades", [None] * len(chunk))
         probs.extend(p if p is not None else [None] * len(chunk))
         progress.progress((end/total), text=f"Procesado {end}/{total}")
-        time.sleep(0.05)  # pequeño respiro para UI
+        time.sleep(0.05)  
     progress.empty()
     return preds, probs
 
@@ -110,4 +108,4 @@ with tab2:
                     st.error(f"Error llamando al backend: {e}")
 
 st.divider()
-st.caption("Consejo: si tu CSV es muy grande, se envía por lotes de 200 registros para no saturar el backend.")
+st.caption("Si el CSV es muy grande, se envía por lotes de 200 registros.")
