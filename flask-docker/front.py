@@ -8,12 +8,14 @@ import math
 import time
 import matplotlib.pyplot as plt
 import seaborn as sns  # pip install seaborn
+import os
 
 # ------------------------- CONFIG -------------------------
-BACKEND_URL_PREDICT     = "http://localhost:8000/predict"
-BACKEND_URL_RETRAIN     = "http://localhost:8000/retrain"
-BACKEND_URL_METRICS     = "http://localhost:8000/metrics"
-BACKEND_URL_HISTORICAL  = "http://localhost:8000/historical_data"
+BACKEND_BASE = os.getenv("BACKEND_BASE", "http://localhost:8000")
+BACKEND_URL_PREDICT    = f"{BACKEND_BASE}/predict"
+BACKEND_URL_RETRAIN    = f"{BACKEND_BASE}/retrain"
+BACKEND_URL_METRICS    = f"{BACKEND_BASE}/metrics"
+BACKEND_URL_HISTORICAL = f"{BACKEND_BASE}/historical_data"
 
 BATCH_SIZE = 200
 
@@ -82,7 +84,7 @@ def parse_csv_or_excel(file):
     if name.endswith(".csv"):
         df = pd.read_csv(StringIO(content.decode("utf-8", errors="ignore")))
     elif name.endswith(".xlsx") or name.endswith(".xls"):
-        df = pd.read_excel(content)  # requiere openpyxl para .xlsx
+        df = pd.read_excel(content)  
     else:
         raise ValueError("Formato no soportado. Sube CSV, XLSX o XLS.")
     return df
@@ -277,7 +279,7 @@ with tab_pred:
                     st.success("Listo.")
                     st.dataframe(df_out.reset_index(drop=True), use_container_width=True)
                     csv = df_out.to_csv(index=False).encode("utf-8")
-                    st.download_button("⬇️ Descargar resultados (CSV)", data=csv,
+                    st.download_button(" Descargar resultados (CSV)", data=csv,
                                        file_name="predicciones_texto.csv", mime="text/csv",
                                        key="pred_editor_download")
                 except Exception as e:
@@ -308,7 +310,7 @@ with tab_pred:
                             st.success(f"Listo. Filas procesadas: {len(df_valid)}")
                             st.dataframe(df_valid.reset_index(drop=True), use_container_width=True)
                             csv_out = df_valid.to_csv(index=False).encode("utf-8")
-                            st.download_button("⬇️ Descargar resultados (CSV)", data=csv_out,
+                            st.download_button("Descargar resultados (CSV)", data=csv_out,
                                                file_name="predicciones_csv.csv", mime="text/csv",
                                                key="pred_file_download")
                         except Exception as e:
@@ -331,7 +333,7 @@ with tab_pred:
                 st.success(f"Listo. Filas procesadas: {len(df_out)}")
                 st.dataframe(df_out.reset_index(drop=True), use_container_width=True)
                 csv = df_out.to_csv(index=False).encode("utf-8")
-                st.download_button("⬇️ Descargar resultados (CSV)", data=csv,
+                st.download_button("Descargar resultados (CSV)", data=csv,
                                    file_name="predicciones_json.csv", mime="text/csv",
                                    key="pred_json_download")
             except Exception as e:
@@ -446,7 +448,7 @@ with tab_retrain:
 
                             df_used = pd.DataFrame(instancias)
                             jsonl = "\n".join(df_used.apply(lambda r: r.to_json(force_ascii=False), axis=1))
-                            st.download_button("⬇️ Descargar instancias (JSONL)",
+                            st.download_button("Descargar instancias (JSONL)",
                                                data=jsonl.encode("utf-8"),
                                                file_name="retrain_instancias.jsonl",
                                                mime="application/json",
