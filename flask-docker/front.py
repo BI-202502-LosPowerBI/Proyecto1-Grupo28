@@ -15,7 +15,6 @@ BACKEND_URL_RETRAIN     = "http://localhost:8000/retrain"
 BACKEND_URL_METRICS     = "http://localhost:8000/metrics"
 BACKEND_URL_HISTORICAL  = "http://localhost:8000/historical_data"
 
-MAX_ROWS_PREVIEW = 100
 BATCH_SIZE = 200
 
 st.set_page_config(page_title="Clasificador ODS", layout="centered")
@@ -91,10 +90,9 @@ def parse_csv_or_excel(file):
 def parse_json_predict(file_or_str):
     """
     Acepta:
-      - archivo JSON o string con:
-        * {"instancias": [{"textos": "..."} , ...]}
-        * [{"textos": "..."}, ...]
-        * {"textos": ["..",".."]}
+      - {"instancias": [{"textos": "..."} , ...]}
+      - [{"textos": "..."}, ...]
+      - {"textos": ["..",".."]}
     Devuelve lista de textos.
     """
     if hasattr(file_or_str, "getvalue"):
@@ -104,9 +102,11 @@ def parse_json_predict(file_or_str):
     data = json.loads(raw)
 
     if isinstance(data, dict) and "instancias" in data:
-        textos = [str(it["textos"]).strip() for it in data["instancias"] if "textos" in it and str(it["textos"]).strip() != ""]
+        textos = [str(it["textos"]).strip() for it in data["instancias"]
+                  if "textos" in it and str(it["textos"]).strip() != ""]
     elif isinstance(data, list):
-        textos = [str(it.get("textos", "")).strip() for it in data if isinstance(it, dict) and str(it.get("textos","")).strip() != ""]
+        textos = [str(it.get("textos", "")).strip() for it in data
+                  if isinstance(it, dict) and str(it.get("textos","")).strip() != ""]
     elif isinstance(data, dict) and "textos" in data and isinstance(data["textos"], list):
         textos = [str(t).strip() for t in data["textos"] if str(t).strip() != ""]
     else:
@@ -118,9 +118,8 @@ def parse_json_predict(file_or_str):
 def parse_json_retrain(file_or_str):
     """
     Acepta:
-      - archivo JSON o string con:
-        * {"instancias": [{"textos": "...", "labels": ...}, ...]}
-        * [{"textos": "...", "labels": ...}, ...]
+      - {"instancias": [{"textos": "...", "labels": ...}, ...]}
+      - [{"textos": "...", "labels": ...}, ...]
     Devuelve lista de dicts {'textos', 'labels'}.
     """
     if hasattr(file_or_str, "getvalue"):
@@ -138,7 +137,7 @@ def parse_json_retrain(file_or_str):
 
     instancias = []
     for it in items:
-        if not isinstance(it, dict): 
+        if not isinstance(it, dict):
             continue
         t = str(it.get("textos", "")).strip()
         l = it.get("labels", None)
@@ -155,12 +154,9 @@ def parse_json_retrain(file_or_str):
 
 # ------------------------- GRAFICADO -------------------------
 def labels_from_report(report_dict):
-    """
-    Toma las clases desde classification_report (excluye accuracy y promedios).
-    """
     keys = [k for k in report_dict.keys() if "avg" not in k and k != "accuracy"]
     try:
-        keys_sorted = sorted(keys, key=lambda x: int(x))  # intenta ordenar numéricamente
+        keys_sorted = sorted(keys, key=lambda x: int(x))
     except:
         keys_sorted = sorted(keys)
     return keys_sorted
@@ -178,11 +174,10 @@ def plot_confusion_matrix(cm, class_labels, title="Matriz de confusión"):
     plt.tight_layout()
     st.pyplot(fig)
 
-def show_classification_report_table(report_dict, show_accuracy_as_caption=True):
+def show_classification_report_table(report_dict, show_accuracy_as_caption=False):
     rep = {k: v for k, v in report_dict.items()}
     acc = rep.pop("accuracy", None)
     df_rep = pd.DataFrame(rep).T
-    # redondear columnas numéricas
     for col in df_rep.columns:
         try:
             df_rep[col] = pd.to_numeric(df_rep[col])
@@ -191,39 +186,54 @@ def show_classification_report_table(report_dict, show_accuracy_as_caption=True)
             pass
     st.write("### Reporte de clasificación")
     st.dataframe(df_rep, use_container_width=True)
-    # Accuracy menos llamativo
+    # Accuracy en azul (info)
     if acc is not None:
         try:
             acc_val = float(acc)
-            if show_accuracy_as_caption:
-                st.caption(f"Accuracy global: {acc_val:.4f}")
-            else:
-                st.info(f"Accuracy global: {acc_val:.4f}")
+            st.info(f"Accuracy global: {acc_val:.4f}")
         except:
             pass
 
-def plot_class_balance_from_report(report_dict, title="Balance de clases (support)"):
-    """
-    Construye un gráfico de barras usando el 'support' del classification_report.
-    """
-    # Extrae clases y supports (omitir accuracy y promedios)
-    items = []
-    for k, v in report_dict.items():
-        if k == "accuracy" or "avg" in k:
-            continue
-        if isinstance(v, dict) and "support" in v:
-            items.append((str(k), int(v["support"])))
-    if not items:
-        st.info("No se encontró información de 'support' en el reporte.")
+def plot_class_balance_from_df(df, label_col="labels", title="Balance de clases – histórico"):
+    if label_col not in df.columns or df.empty:
+        st.info("No hay columna de labels o el histórico está vacío.")
         return
-    labels, supports = zip(*items)
+    counts = df[label_col].value_counts(dropna=False)
+    try:
+        counts = counts.sort_index(key=lambda idx: [int(x) if str(x).isdigit() else x for x in idx])
+    except Exception:
+        counts = counts.sort_index()
+
+    total = counts.sum()
+    tabla = (
+        counts.rename("support")
+              .to_frame()
+              .assign(pct=lambda d: (d["support"]/total*100).round(2))
+    )
+
     fig, ax = plt.subplots(figsize=(7, 4))
-    sns.barplot(x=list(labels), y=list(supports), ax=ax)
-    ax.set_title(title)
+    sns.barplot(x=tabla.index.astype(str), y=tabla["support"].values, ax=ax)
     ax.set_xlabel("Clase")
     ax.set_ylabel("Soporte (n)")
+    ax.set_title(title)
     plt.tight_layout()
     st.pyplot(fig)
+
+    st.dataframe(tabla.reset_index(names=["clase"]), use_container_width=True)
+    st.caption(f"Total ejemplos: {int(total)}")
+
+def show_simple_counts(df, label_col=None, title_prefix="Resumen"):
+    """
+    Pequeño resumen tipo histórico al cargar archivos:
+    - Total filas
+    - Si hay labels, conteo por clase en tabla.
+    """
+    total = len(df)
+    st.caption(f"{title_prefix}: {total} filas detectadas.")
+    if label_col and (label_col in df.columns):
+        vc = df[label_col].value_counts(dropna=False).sort_index()
+        resumen = vc.rename("conteo").to_frame().reset_index(names=[label_col])
+        st.dataframe(resumen, use_container_width=True)
 
 # ------------------------- LAYOUT: 4 TABS -------------------------
 tab_pred, tab_retrain, tab_metrics, tab_hist = st.tabs(["Predecir", "Reentrenar", "Métricas", "Histórico"])
@@ -245,6 +255,8 @@ with tab_pred:
             use_container_width=True,
             key="pred_editor_table",
         )
+        # resumen de lo que se enviará
+        show_simple_counts(df_edit, title_prefix="Filas en editor")
         if st.button("Predecir", key="pred_editor_btn"):
             df_clean = df_edit.copy()
             df_clean["textos"] = df_clean["textos"].astype(str).str.strip()
@@ -253,6 +265,7 @@ with tab_pred:
                 st.error("Agrega al menos una fila con 'textos'.")
             else:
                 try:
+                    st.caption(f"Se enviarán {len(df_clean)} filas.")
                     textos = df_clean["textos"].tolist()
                     preds, probs = batch_predict(textos)
                     df_out = pd.DataFrame({
@@ -262,7 +275,7 @@ with tab_pred:
                         "probabilidad": probs
                     })
                     st.success("Listo.")
-                    st.dataframe(df_out, use_container_width=True)
+                    st.dataframe(df_out.reset_index(drop=True), use_container_width=True)
                     csv = df_out.to_csv(index=False).encode("utf-8")
                     st.download_button("⬇️ Descargar resultados (CSV)", data=csv,
                                        file_name="predicciones_texto.csv", mime="text/csv",
@@ -276,7 +289,8 @@ with tab_pred:
             try:
                 df = parse_csv_or_excel(file)
                 st.write("Vista previa del archivo:")
-                st.dataframe(df.head(MAX_ROWS_PREVIEW), use_container_width=True)
+                st.dataframe(df.reset_index(drop=True), use_container_width=True)
+                show_simple_counts(df, title_prefix="Archivo cargado")
                 cols = df.columns.tolist()
                 col_text = st.selectbox("Columna de textos", options=cols, key="pred_cols")
                 if st.button("Predecir (archivo)", key="pred_file_btn"):
@@ -286,12 +300,13 @@ with tab_pred:
                         st.error("La columna seleccionada no contiene textos válidos.")
                     else:
                         try:
+                            st.caption(f"Se enviarán {len(texts_csv)} filas.")
                             preds, probs = batch_predict(texts_csv)
                             df_valid = pd.DataFrame({col_text: texts_csv})
                             df_valid["prediccion"] = preds
                             df_valid["probabilidad"] = probs
                             st.success(f"Listo. Filas procesadas: {len(df_valid)}")
-                            st.dataframe(df_valid.head(MAX_ROWS_PREVIEW), use_container_width=True)
+                            st.dataframe(df_valid.reset_index(drop=True), use_container_width=True)
                             csv_out = df_valid.to_csv(index=False).encode("utf-8")
                             st.download_button("⬇️ Descargar resultados (CSV)", data=csv_out,
                                                file_name="predicciones_csv.csv", mime="text/csv",
@@ -310,10 +325,11 @@ with tab_pred:
                     textos = parse_json_predict(filej)
                 else:
                     textos = parse_json_predict(pasted)
+                st.caption(f"Se enviarán {len(textos)} filas.")
                 preds, probs = batch_predict(textos)
                 df_out = pd.DataFrame({"texto": textos, "prediccion": preds, "probabilidad": probs})
                 st.success(f"Listo. Filas procesadas: {len(df_out)}")
-                st.dataframe(df_out.head(MAX_ROWS_PREVIEW), use_container_width=True)
+                st.dataframe(df_out.reset_index(drop=True), use_container_width=True)
                 csv = df_out.to_csv(index=False).encode("utf-8")
                 st.download_button("⬇️ Descargar resultados (CSV)", data=csv,
                                    file_name="predicciones_json.csv", mime="text/csv",
@@ -338,6 +354,8 @@ with tab_retrain:
             use_container_width=True,
             key="rt_editor",
         )
+        # resumen tipo histórico
+        show_simple_counts(df_edit, label_col="labels", title_prefix="Filas en editor")
         if st.button("Reentrenar", key="rt_editor_btn"):
             df_clean = df_edit.copy()
             df_clean["textos"] = df_clean["textos"].astype(str).str.strip()
@@ -351,6 +369,7 @@ with tab_retrain:
                         {"textos": t, "labels": (int(l) if str(l).isdigit() else l)}
                         for t, l in zip(df_clean["textos"].tolist(), df_clean["labels"].tolist())
                     ]
+                    st.caption(f"Se enviarán {len(instancias)} filas.")
                     with st.spinner("Reentrenando…"):
                         resp = call_retrain(instancias)
                     st.success(resp.get("mensaje", "Modelo reentrenado"))
@@ -364,15 +383,11 @@ with tab_retrain:
                         cm = metricas.get("matriz_confusion")
                         report = metricas.get("reporte_clasificacion") or resp.get("reporte_clasificacion")
                         if cm is not None and report is not None:
-                            labels = labels_from_report(report)
                             st.write("### Matriz de confusión")
+                            labels = labels_from_report(report)
                             plot_confusion_matrix(cm, labels, title="Matriz de confusión (post-retrain)")
                             show_classification_report_table(report)
-                            # Balance SOLO aquí
-                            st.write("### Balance de clases")
-                            plot_class_balance_from_report(report, title="Balance de clases (support) – post-retrain")
 
-                    # Descarga de instancias usadas
                     jsonl = "\n".join(pd.DataFrame(instancias).apply(lambda r: r.to_json(force_ascii=False), axis=1))
                     st.download_button("⬇️ Descargar instancias (JSONL)",
                                        data=jsonl.encode("utf-8"),
@@ -388,8 +403,8 @@ with tab_retrain:
             try:
                 df_rt = parse_csv_or_excel(file_rt)
                 st.write("Vista previa:")
-                st.dataframe(df_rt.head(MAX_ROWS_PREVIEW), use_container_width=True)
-
+                st.dataframe(df_rt.reset_index(drop=True), use_container_width=True)
+                show_simple_counts(df_rt, label_col="labels", title_prefix="Archivo cargado")
                 cols_rt = df_rt.columns.tolist()
                 idx_text = cols_rt.index("textos") if "textos" in cols_rt else 0
                 idx_lab  = cols_rt.index("labels") if "labels" in cols_rt else (1 if len(cols_rt) > 1 else 0)
@@ -410,6 +425,7 @@ with tab_retrain:
                                 {"textos": t, "labels": (int(l) if str(l).isdigit() else l)}
                                 for t, l in zip(sub[col_text_rt].tolist(), sub[col_label_rt].tolist())
                             ]
+                            st.caption(f"Se enviarán {len(instancias)} filas.")
                             with st.spinner("Reentrenando…"):
                                 resp = call_retrain(instancias)
                             st.success(resp.get("mensaje", "Modelo reentrenado"))
@@ -423,15 +439,11 @@ with tab_retrain:
                                 cm = metricas.get("matriz_confusion")
                                 report = metricas.get("reporte_clasificacion") or resp.get("reporte_clasificacion")
                                 if cm is not None and report is not None:
-                                    labels = labels_from_report(report)
                                     st.write("### Matriz de confusión")
+                                    labels = labels_from_report(report)
                                     plot_confusion_matrix(cm, labels, title="Matriz de confusión (post-retrain)")
                                     show_classification_report_table(report)
-                                    # Balance SOLO aquí
-                                    st.write("### Balance de clases")
-                                    plot_class_balance_from_report(report, title="Balance de clases (support) – post-retrain")
 
-                            # Descarga de instancias usadas
                             df_used = pd.DataFrame(instancias)
                             jsonl = "\n".join(df_used.apply(lambda r: r.to_json(force_ascii=False), axis=1))
                             st.download_button("⬇️ Descargar instancias (JSONL)",
@@ -453,6 +465,7 @@ with tab_retrain:
                     instancias = parse_json_retrain(filej_rt)
                 else:
                     instancias = parse_json_retrain(pasted_rt)
+                st.caption(f"Se enviarán {len(instancias)} filas.")
                 with st.spinner("Reentrenando…"):
                     resp = call_retrain(instancias)
                 st.success(resp.get("mensaje", "Modelo reentrenado"))
@@ -465,13 +478,10 @@ with tab_retrain:
                     cm = metricas.get("matriz_confusion")
                     report = metricas.get("reporte_clasificacion") or resp.get("reporte_clasificacion")
                     if cm is not None and report is not None:
-                        labels = labels_from_report(report)
                         st.write("### Matriz de confusión")
+                        labels = labels_from_report(report)
                         plot_confusion_matrix(cm, labels, title="Matriz de confusión (post-retrain)")
                         show_classification_report_table(report)
-                        # Balance SOLO aquí
-                        st.write("### Balance de clases")
-                        plot_class_balance_from_report(report, title="Balance de clases (support) – post-retrain")
             except Exception as e:
                 st.error(f"Error en JSON: {e}")
 
@@ -496,13 +506,11 @@ with tab_metrics:
                 cm = metricas.get("matriz_confusion")
                 report = metricas.get("reporte_clasificacion")
                 if cm is not None and report is not None:
-                    labels = labels_from_report(report)
                     st.write("### Matriz de confusión")
+                    labels = labels_from_report(report)
                     plot_confusion_matrix(cm, labels, title="Matriz de confusión (modelo actual)")
-                    show_classification_report_table(report)
-                    # Balance SOLO aquí
-                    st.write("### Balance de clases")
-                    plot_class_balance_from_report(report, title="Balance de clases (support) – modelo actual")
+                    # Reporte + accuracy en azul
+                    show_classification_report_table(report, show_accuracy_as_caption=False)
         except Exception as e:
             st.error(f"Error consultando métricas: {e}")
 
@@ -517,7 +525,15 @@ with tab_hist:
                 st.info("No hay datos en el histórico.")
             else:
                 df_hist = pd.DataFrame(filas)
-                st.dataframe(df_hist, use_container_width=True)
+
+                # 1) Primero: balanceo de clases del histórico
+                st.write("### Balance de clases del histórico")
+                plot_class_balance_from_df(df_hist, label_col="labels",
+                                           title="Balance de clases (support) – histórico")
+
+                # 2) Luego: tabla completa del histórico
+                st.write("### Histórico de instancias usadas en reentrenamientos")
+                st.dataframe(df_hist.reset_index(drop=True), use_container_width=True)
                 st.caption(f"Total filas en histórico: {len(df_hist)}")
         except Exception as e:
             st.error(f"Error consultando histórico: {e}")
