@@ -15,4 +15,4 @@ Repositorio: https://github.com/BI-202502-LosPowerBI/Proyecto1-Grupo28.git
 
 2. **Abrir en el navegador**
    ```bash
-   http://localhost:8510
+   http://localhost:8501
